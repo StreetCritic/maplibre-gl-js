@@ -604,10 +604,30 @@ export class GeolocateControl extends Evented implements IControl {
     };
 
     /**
-     * Programmatically request and move the map to the user's location (unless
-     * `toBackground` is true).
+     * If the control is in OFF state, switch to WAITING_BACKGROUND.
      *
-     * @param toBackground - Switch to background state after location is found.
+     * Needs trackUserLocation to be true, throws error otherwise.
+     */
+    enable_location() {
+        if (!this.options.trackUserLocation) {
+            throw new Error("enable_location not supported when trackUserLocation is false");
+        }
+        if (!this._setup) {
+            warnOnce('Geolocate control triggered before added to a map');
+            return false;
+        }
+        if (this._watchState === 'OFF') {
+            this._watchState = 'WAITING_BACKGROUND';
+            this.fire(new Event('trackuserlocationstart'));
+            this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-waiting');
+            this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-background');
+            this._manageWatching();
+        }
+    }
+
+    /**
+     * Programmatically request and move the map to the user's location.
+     *
      * @returns `false` if called before control was added to a map, otherwise returns `true`.
      * @example
      * ```ts
@@ -625,7 +645,7 @@ export class GeolocateControl extends Evented implements IControl {
      * });
      * ```
      */
-    trigger(toBackground?: boolean): boolean {
+    trigger(): boolean {
         if (!this._setup) {
             warnOnce('Geolocate control triggered before added to a map');
             return false;
@@ -635,7 +655,7 @@ export class GeolocateControl extends Evented implements IControl {
             switch (this._watchState) {
                 case 'OFF':
                 // turn on the Geolocate Control
-                    this._watchState = toBackground ? 'WAITING_BACKGROUND' : 'WAITING_ACTIVE';
+                    this._watchState = 'WAITING_ACTIVE';
 
                     this.fire(new Event('trackuserlocationstart'));
                     break;
@@ -671,10 +691,6 @@ export class GeolocateControl extends Evented implements IControl {
 
             // incoming state setup
             switch (this._watchState) {
-                case 'WAITING_BACKGROUND':
-                    this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-waiting');
-                    this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-background');
-                    break;
                 case 'WAITING_ACTIVE':
                     this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-waiting');
                     this._geolocateButton.classList.add('maplibregl-ctrl-geolocate-active');
@@ -688,6 +704,20 @@ export class GeolocateControl extends Evented implements IControl {
                     throw new Error(`Unexpected watchState ${this._watchState}`);
             }
 
+            this._manageWatching();
+        } else {
+            window.navigator.geolocation.getCurrentPosition(
+                this._onSuccess, this._onError, this.options.positionOptions);
+
+            // This timeout ensures that we still call finish() even if
+            // the user declines to share their location in Firefox
+            this._timeoutId = setTimeout(this._finish, 10000 /* 10sec */);
+        }
+
+        return true;
+    }
+
+    _manageWatching() {
             // manage geolocation.watchPosition / geolocation.clearWatch
             if (this._watchState === 'OFF' && this._geolocationWatchID !== undefined) {
                 // clear watchPosition as we've changed to an OFF state
@@ -711,16 +741,6 @@ export class GeolocateControl extends Evented implements IControl {
                 this._geolocationWatchID = window.navigator.geolocation.watchPosition(
                     this._onSuccess, this._onError, positionOptions);
             }
-        } else {
-            window.navigator.geolocation.getCurrentPosition(
-                this._onSuccess, this._onError, this.options.positionOptions);
-
-            // This timeout ensures that we still call finish() even if
-            // the user declines to share their location in Firefox
-            this._timeoutId = setTimeout(this._finish, 10000 /* 10sec */);
-        }
-
-        return true;
     }
 
     _clearWatch() {
@@ -735,4 +755,3 @@ export class GeolocateControl extends Evented implements IControl {
         }
     }
 }
-
